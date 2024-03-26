@@ -1,63 +1,47 @@
-// function getNameFromAuth() {
-//     firebase.auth().onAuthStateChanged(user => {
-//         // Check if a user is signed in:
-//         if (user) {
-//             // Do something for the currently logged-in user here: 
-//             console.log(user.uid); //print the uid in the browser console
-//             console.log(user.displayName);  //print the user name in the browser console
-//             userName = user.displayName;
+var currentUser;
 
-//             //method #1:  insert with JS
-//             //document.getElementById("name-goes-here").innerText = userName;    
-
-//             //method #2:  insert using jquery
-//             $("#name-goes-here").text(userName); //using jquery
-
-//             //method #3:  insert using querySelector
-//             //document.querySelector("#name-goes-here").innerText = userName
-
-//         } else {
-//             // No user is signed in.
-//             console.log("No user is logged in");
-//         }
-//     });
-// }
-// getNameFromAuth(); //run the function
-function insertNameFromFirestore() {
-    // Check if the user is logged in:
+//Function that calls everything needed for the main page  
+function doAll() {
     firebase.auth().onAuthStateChanged(user => {
         if (user) {
-            console.log(user.uid); // Let's know who the logged-in user is by logging their UID
-            currentUser = db.collection("users").doc(user.uid); // Go to the Firestore document of the user
-            currentUser.get().then(userDoc => {
-                // Get the user name
-                let userName = userDoc.data().name;
-                console.log(userName);
-                //$("#name-goes-here").text(userName); // jQuery
-                document.getElementById("name-goes-here").innerText = userName;
-            })
+            currentUser = db.collection("users").doc(user.uid); //global
+            console.log(currentUser);
+
+            // figure out what day of the week it is today
+            const weekday = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+            const d = new Date();
+            let day = weekday[d.getDay()];
+
+            // the following functions are always called when someone is logged in
+            readQuote(day);
+            insertNameFromFirestore();
+            displayCardsDynamically("hikes");
         } else {
-            console.log("No user is logged in."); // Log a message when no user is logged in
+            // No user is signed in.
+            console.log("No user is signed in");
+            window.location.href = "login.html";
         }
+    });
+}
+doAll();
+// Insert name function using the global variable "currentUser"
+function insertNameFromFirestore() {
+    currentUser.get().then(userDoc => {
+        //get the user name
+        var user_Name = userDoc.data().name;
+        console.log(user_Name);
+        $("#name-goes-here").text(user_Name); //jquery
+        // document.getElementByID("name-goes-here").innetText=user_Name;
     })
 }
-
-insertNameFromFirestore();
-// Function to read the quote of the day from the Firestore "quotes" collection
-// Input param is the String representing the day of the week, aka, the document name
 function readQuote(day) {
-    db.collection("quotes").doc(day)                                                      //name of the collection and documents should matach excatly with what you have in Firestore
-        .onSnapshot(dayDoc => {                                                               //arrow notation
-            console.log("current document data: " + dayDoc.data());                          //.data() returns data object
-            document.getElementById("quote-goes-here").innerHTML = dayDoc.data().quote;      //using javascript to display the data on the right place
-
-            //Here are other ways to access key-value data fields
-            //$('#quote-goes-here').text(dayDoc.data().quote);         //using jquery object dot notation
-            //$("#quote-goes-here").text(dayDoc.data()["quote"]);      //using json object indexing
-            //document.querySelector("#quote-goes-here").innerHTML = dayDoc.data().quote;
-        })
+    db.collection("quotes").doc(day).onSnapshot(doc => {
+        console.log("inside");
+        console.log(doc.data());
+        document.getElementById("quote-goes-here").innerHTML = doc.data().quote;
+    })
 }
-readQuote("tuesday");        //calling the function
+// Comment out the next line (we will call this function from doAll())
 
 function writeHikes() {
     //define a variable for the collection you want to create in Firestore to populate data
@@ -123,11 +107,23 @@ function displayCardsDynamically(collection) {
 
                 //update title and text and image
                 newcard.querySelector('.card-title').innerHTML = title;
-                newcard.querySelector('.card-length').innerHTML = hikeLength + "km";
+                newcard.querySelector('.card-length').innerHTML =
+                    "Length: " + hikeLength + " km <br>" +
+                    "Duration: " + doc.data().hike_time + "min <br>" +
+                    "Last updated: " + doc.data().last_updated.toDate().toLocaleDateString();
                 newcard.querySelector('.card-text').innerHTML = details;
                 newcard.querySelector('.card-image').src = `./images/${hikeCode}.jpg`; //Example: NV01.jpg
                 newcard.querySelector('a').href = "eachHike.html?docID=" + docID;
+                newcard.querySelector('i').onclick = () => saveBookmark(docID);
+                newcard.querySelector('i').id = 'save-' + docID;   //guaranteed to be unique
 
+                currentUser.get().then(userDoc => {
+                    let bookmarks_now = userDoc.data().bookmarks
+                    if (bookmarks_now.includes(docID)) {
+                        document.getElementById('save-' + docID).innerText = "bookmark";
+                        document.getElementById('save-' + docID).onclick = () => removeBookmark(docID);
+                    }
+                })
                 //Optional: give unique ids to all elements for future use
                 // newcard.querySelector('.card-title').setAttribute("id", "ctitle" + i);
                 // newcard.querySelector('.card-text').setAttribute("id", "ctext" + i);
@@ -142,4 +138,33 @@ function displayCardsDynamically(collection) {
 
 }
 
-displayCardsDynamically("hikes");  //input param is the name of the collection
+function saveBookmark(hikeID) {
+    currentUser.update({
+        // Use 'arrayUnion' to add the new bookmark ID to the 'bookmarks' array.
+        // This method ensures that the ID is added only if it's not already present, preventing duplicates.
+        bookmarks: firebase.firestore.FieldValue.arrayUnion(hikeID)
+    })
+        // Handle the front-end update to change the icon, providing visual feedback to the user that it has been clicked.
+        .then(function () {
+            console.log("bookmark has been saved for" + hikeID);
+            let iconID = "save-" + hikeID;
+            document.getElementById(iconID).innerText = "bookmark"
+        });
+
+}
+
+function removeBookmark(hikeID) {
+    console.log("saf")
+    currentUser.update({
+        // Use 'arrayUnion' to add the new bookmark ID to the 'bookmarks' array.
+        // This method ensures that the ID is added only if it's not already present, preventing duplicates.
+        bookmarks: firebase.firestore.FieldValue.arrayRemove(hikeID)
+    })
+        // Handle the front-end update to change the icon, providing visual feedback to the user that it has been clicked.
+        .then(function () {
+            console.log("bookmark has been saved for" + hikeID);
+            let iconID = "save-" + hikeID;
+            document.getElementById(iconID).innerText = "   "
+        });
+
+}
